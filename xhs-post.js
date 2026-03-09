@@ -390,13 +390,16 @@ async function main() {
 
   console.log(`\n[${new Date().toLocaleString('zh-CN')}] ===== 开始发帖任务 =====`);
 
-  // 检查今天是否已发过
+  // 检查今天该时段是否已发过（中午/晚上各一次）
+  const hour = new Date().getHours();
+  const slot = hour < 18 ? 'afternoon' : 'tonight';
+  const historyKey = `${today}_${slot}`;
   let history = {};
   if (fs.existsSync(logFile)) {
     history = JSON.parse(fs.readFileSync(logFile, 'utf8'));
   }
-  if (history[today]) {
-    console.log(`[跳过] 今天（${today}）已经发过了：${history[today].title}`);
+  if (history[historyKey]) {
+    console.log(`[跳过] 今天${slot === 'afternoon' ? '中午篇' : '晚上篇'}已发过了：${history[historyKey].title}`);
     return;
   }
 
@@ -436,10 +439,9 @@ async function main() {
   if (fs.existsSync(contentFile)) {
     try {
       const data = JSON.parse(fs.readFileSync(contentFile, 'utf8'));
-      const hour = new Date().getHours();
       if (data.afternoon || data.tonight) {
         // 新格式：双篇模式，18点前用下午篇，18点后用晚上篇
-        if (hour < 18 && data.afternoon) {
+        if (slot === 'afternoon' && data.afternoon) {
           postContent = data.afternoon;
           console.log(`[内容] 当前 ${hour}:xx，使用【下午篇】内容`);
         } else if (data.tonight) {
@@ -771,7 +773,7 @@ async function main() {
       await publishBtn.click();
       await activePage.waitForTimeout(4000);
       console.log(`[成功] 🎉 帖子发布成功！`);
-      history[today] = { title: postContent.title, publishedAt: new Date().toISOString() };
+      history[historyKey] = { title: postContent.title, publishedAt: new Date().toISOString() };
       fs.writeFileSync(logFile, JSON.stringify(history, null, 2));
     } else {
       const buttons2 = await activePage.evaluate(() =>
