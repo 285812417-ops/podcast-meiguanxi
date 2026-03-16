@@ -723,7 +723,6 @@ async function main() {
         await activePage.waitForTimeout(3000);
         break;
       }
-      }
     }
 
     // 打印当前按钮列表（调试）
