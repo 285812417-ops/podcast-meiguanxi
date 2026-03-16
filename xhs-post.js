@@ -671,7 +671,7 @@ async function main() {
     }
 
     // 点击"下一步"（可能有多个，循环点到出现"发布"为止）
-    for (let step = 1; step <= 3; step++) {
+    for (let step = 1; step <= 6; step++) {
       // 等待"下一步"按钮出现且可点击（非 disabled）
       console.log(`[浏览器] 等待"下一步"按钮可点击（第${step}次）...`);
       try {
