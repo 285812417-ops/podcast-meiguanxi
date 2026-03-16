@@ -672,31 +672,57 @@ async function main() {
 
     // 点击"下一步"（可能有多个，循环点到出现"发布"为止）
     for (let step = 1; step <= 6; step++) {
+      // 先关闭可能出现的图片生成失败弹窗/提示
+      try {
+        const retryBtn = activePage.locator('button:has-text("重试"), button:has-text("关闭"), button:has-text("跳过")').first();
+        if (await retryBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
+          await retryBtn.click();
+          console.log(`[浏览器] 关闭图片生成失败提示`);
+          await activePage.waitForTimeout(1000);
+        }
+      } catch(e) {}
+
       // 等待"下一步"按钮出现且可点击（非 disabled）
+      // 如果按钮是 disabled（图片生成中），用 JS 强制点击
       console.log(`[浏览器] 等待"下一步"按钮可点击（第${step}次）...`);
       try {
-        await activePage.waitForSelector('button:has-text("下一步"):not([disabled])', { timeout: 15000 });
+        await activePage.waitForSelector('button:has-text("下一步")', { timeout: 15000 });
       } catch(e) {
         console.log(`[浏览器] "下一步"按钮等待超时或已消失，跳出循环`);
         break;
       }
-      const nextBtn = activePage.locator('button:has-text("下一步"):not([disabled])').first();
-      if (await nextBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-        try {
-          await nextBtn.click();
-        } catch(e) {
-          console.log(`[浏览器] 点击"下一步"时元素消失，可能已跳转，继续`);
+      // 优先点非 disabled，若不存在则强制 JS 点击（跳过图片生成中的限制）
+      const nextBtnEnabled = activePage.locator('button:has-text("下一步"):not([disabled])').first();
+      const nextBtnAny = activePage.locator('button:has-text("下一步")').first();
+      const canClick = await nextBtnEnabled.isVisible({ timeout: 2000 }).catch(() => false);
+      try {
+        if (canClick) {
+          await nextBtnEnabled.click();
+        } else {
+          // 强制 JS 点击，绕过 disabled
+          await activePage.evaluate(() => {
+            const btn = Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === '下一步');
+            if (btn) btn.click();
+          });
+          console.log(`[浏览器] JS 强制点击"下一步"（绕过图片生成限制）`);
         }
-        console.log(`[浏览器] 已点击"下一步"（第${step}次）`);
-        await activePage.waitForTimeout(3000);
-        // 如果已经出现发布按钮就不再点下一步
-        const hasPublish = await activePage.locator('button:has-text("发布"):not([disabled])').isVisible({ timeout: 2000 }).catch(() => false);
-        if (hasPublish) {
-          console.log(`[浏览器] 发布按钮已出现，准备发布`);
-          break;
-        }
-      } else {
+      } catch(e) {
+        console.log(`[浏览器] 点击"下一步"时元素消失，可能已跳转，继续`);
+      }
+      console.log(`[浏览器] 已点击"下一步"（第${step}次）`);
+      await activePage.waitForTimeout(3000);
+      // 如果已经出现发布按钮就不再点下一步
+      const hasPublish = await activePage.locator('button:has-text("发布"):not([disabled])').isVisible({ timeout: 2000 }).catch(() => false);
+      if (hasPublish) {
+        console.log(`[浏览器] 发布按钮已出现，准备发布`);
         break;
+      }
+      const hasPublishAny = await activePage.locator('button:has-text("发布")').isVisible({ timeout: 1000 }).catch(() => false);
+      if (hasPublishAny) {
+        console.log(`[浏览器] 发布按钮出现（可能 disabled），等待激活...`);
+        await activePage.waitForTimeout(3000);
+        break;
+      }
       }
     }
 
