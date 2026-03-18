@@ -409,7 +409,7 @@ async function main() {
   const contentFile = path.join(__dirname, 'content.json');
 
   // 先从 GitHub 拉最新 content.json（OpenClaw 每天更新到 GitHub）
-  const CONTENT_GITHUB_URL = 'https://raw.githubusercontent.com/285812417-ops/podcast-meiguanxi/main/xhs-content.json';
+  const CONTENT_GITHUB_URL = `https://raw.githubusercontent.com/285812417-ops/podcast-meiguanxi/main/xhs-content.json?t=${Date.now()}`;
   try {
     console.log(`[内容] 正在从 GitHub 拉取最新内容...`);
     const remoteData = await new Promise((resolve, reject) => {
