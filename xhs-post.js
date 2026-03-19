@@ -671,14 +671,43 @@ async function main() {
     }
 
     // 点击"下一步"（可能有多个，循环点到出现"发布"为止）
-    for (let step = 1; step <= 6; step++) {
+    for (let step = 1; step <= 10; step++) {
       // 先关闭可能出现的图片生成失败弹窗/提示
       try {
-        const retryBtn = activePage.locator('button:has-text("重试"), button:has-text("关闭"), button:has-text("跳过")').first();
+        const retryBtn = activePage.locator('button:has-text("重试"), button:has-text("关闭")').first();
         if (await retryBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
           await retryBtn.click();
           console.log(`[浏览器] 关闭图片生成失败提示`);
           await activePage.waitForTimeout(1000);
+        }
+      } catch(e) {}
+
+      // 检查是否出现了发布按钮（优先退出循环）
+      const hasPublish = await activePage.locator('button:has-text("发布"):not([disabled])').isVisible({ timeout: 1000 }).catch(() => false);
+      if (hasPublish) {
+        console.log(`[浏览器] 发布按钮已出现，准备发布`);
+        break;
+      }
+      const hasPublishAny = await activePage.locator('button:has-text("发布")').isVisible({ timeout: 500 }).catch(() => false);
+      if (hasPublishAny) {
+        console.log(`[浏览器] 发布按钮出现（可能 disabled），等待激活...`);
+        await activePage.waitForTimeout(3000);
+        break;
+      }
+
+      // 检测模板选择页：若存在模板卡片/跳过按钮，直接跳过模板
+      try {
+        const skipBtn = activePage.locator('button:has-text("跳过"), button:has-text("不使用模板"), button:has-text("暂不使用"), [class*="skip"]').first();
+        if (await skipBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
+          await skipBtn.click();
+          console.log(`[浏览器] 跳过模板选择`);
+          await activePage.waitForTimeout(2000);
+          continue;
+        }
+        // 若有模板卡片但无跳过按钮，直接点"下一步"通过
+        const templateCard = activePage.locator('[class*="template"], [class*="Template"]').first();
+        if (await templateCard.isVisible({ timeout: 800 }).catch(() => false)) {
+          console.log(`[浏览器] 检测到模板选择页，直接点击下一步跳过`);
         }
       } catch(e) {}
 
@@ -693,7 +722,6 @@ async function main() {
       }
       // 优先点非 disabled，若不存在则强制 JS 点击（跳过图片生成中的限制）
       const nextBtnEnabled = activePage.locator('button:has-text("下一步"):not([disabled])').first();
-      const nextBtnAny = activePage.locator('button:has-text("下一步")').first();
       const canClick = await nextBtnEnabled.isVisible({ timeout: 2000 }).catch(() => false);
       try {
         if (canClick) {
@@ -710,19 +738,7 @@ async function main() {
         console.log(`[浏览器] 点击"下一步"时元素消失，可能已跳转，继续`);
       }
       console.log(`[浏览器] 已点击"下一步"（第${step}次）`);
-      await activePage.waitForTimeout(3000);
-      // 如果已经出现发布按钮就不再点下一步
-      const hasPublish = await activePage.locator('button:has-text("发布"):not([disabled])').isVisible({ timeout: 2000 }).catch(() => false);
-      if (hasPublish) {
-        console.log(`[浏览器] 发布按钮已出现，准备发布`);
-        break;
-      }
-      const hasPublishAny = await activePage.locator('button:has-text("发布")').isVisible({ timeout: 1000 }).catch(() => false);
-      if (hasPublishAny) {
-        console.log(`[浏览器] 发布按钮出现（可能 disabled），等待激活...`);
-        await activePage.waitForTimeout(3000);
-        break;
-      }
+      await activePage.waitForTimeout(2500);
     }
 
     // 打印当前按钮列表（调试）
