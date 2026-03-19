@@ -670,15 +670,52 @@ async function main() {
       console.log(`[浏览器] 未找到"一键排版"，继续`);
     }
 
+    // 排版完成后：等待图片生成，若失败则重新生成，最多等60秒
+    console.log(`[浏览器] 等待排版图片生成...`);
+    for (let imgWait = 0; imgWait < 20; imgWait++) {
+      await activePage.waitForTimeout(3000);
+      // 检测「生成图片失败」提示
+      const hasFailed = await activePage.evaluate(() => {
+        return document.body.innerText.includes('生成图片失败') || document.body.innerText.includes('图片生成失败');
+      });
+      if (hasFailed) {
+        console.log(`[浏览器] 检测到图片生成失败，尝试点击第一个模板重新触发生成...`);
+        // 点击一个模板卡片来重新触发图片生成
+        try {
+          await activePage.evaluate(() => {
+            const templates = document.querySelectorAll('[class*="template-item"], [class*="templateItem"], [class*="template_item"]');
+            if (templates && templates.length > 0) templates[0].click();
+          });
+          await activePage.waitForTimeout(5000);
+        } catch(e) {}
+        break;
+      }
+      // 检测图片生成中（还在转圈）
+      const isLoading = await activePage.evaluate(() => {
+        return document.body.innerText.includes('图片生成中') || document.body.innerText.includes('生成中，请稍后');
+      });
+      if (!isLoading) {
+        console.log(`[浏览器] 图片生成完成或无需生成`);
+        break;
+      }
+      console.log(`[浏览器] 图片生成中，继续等待... (${imgWait + 1}/20)`);
+    }
+    await activePage.waitForTimeout(2000);
+
     // 点击"下一步"（可能有多个，循环点到出现"发布"为止）
     for (let step = 1; step <= 10; step++) {
-      // 先关闭可能出现的图片生成失败弹窗/提示
+      // 先处理「图片生成失败」——点击第一个模板重触发
       try {
-        const retryBtn = activePage.locator('button:has-text("重试"), button:has-text("关闭")').first();
-        if (await retryBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
-          await retryBtn.click();
-          console.log(`[浏览器] 关闭图片生成失败提示`);
-          await activePage.waitForTimeout(1000);
+        const hasFailed = await activePage.evaluate(() => {
+          return document.body.innerText.includes('生成图片失败') || document.body.innerText.includes('图片生成失败');
+        });
+        if (hasFailed) {
+          console.log(`[浏览器] 图片生成失败，点击模板重新生成...`);
+          await activePage.evaluate(() => {
+            const templates = document.querySelectorAll('[class*="template-item"], [class*="templateItem"], [class*="template_item"]');
+            if (templates && templates.length > 0) templates[0].click();
+          });
+          await activePage.waitForTimeout(8000);
         }
       } catch(e) {}
 
