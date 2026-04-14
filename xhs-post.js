@@ -868,11 +868,172 @@ async function main() {
     console.log(`[截图] 错误截图已保存，请查看 error-${today}.png`);
     process.exit(1);
   } finally {
+    // 发帖完成后，顺带抓小红书热榜（复用已登录的 context）
+    try {
+      await fetchAndSaveTrending(page);
+    } catch (e) {
+      console.log(`[热榜] 抓取失败，跳过：${e.message}`);
+    }
     await page.waitForTimeout(2000);
     await browser.close();
   }
 
   console.log(`[完成] ===== 发帖任务结束 =====\n`);
+}
+
+/**
+ * 抓取小红书热搜榜，保存到本地 trending.json
+ * 复用已登录的 page 对象（含有效 Cookie）
+ */
+async function fetchAndSaveTrending(page) {
+  console.log(`[热榜] 开始抓取小红书热搜...`);
+
+  // 导航到搜索热榜页面
+  await page.goto('https://www.xiaohongshu.com/search_result?keyword=%E7%83%AD%E9%97%A8&source=web_search_result_notes', {
+    waitUntil: 'domcontentloaded',
+    timeout: 20000,
+  });
+  await page.waitForTimeout(2000);
+
+  // 通过 fetch 调用热搜榜 API（在浏览器上下文中执行，携带 Cookie）
+  const result = await page.evaluate(async () => {
+    // 尝试热搜榜 API
+    try {
+      const res = await fetch('https://www.xiaohongshu.com/api/sns/web/v1/search/hot_list?channel=homefeed', {
+        credentials: 'include',
+        headers: {
+          'Accept': 'application/json, text/plain, */*',
+          'Referer': 'https://www.xiaohongshu.com/',
+          'Content-Type': 'application/json;charset=UTF-8',
+          'x-s-common': '',
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.data) return { source: 'hot_list', data: data.data };
+      }
+    } catch(e) {}
+
+    // 备用：热门话题接口
+    try {
+      const res2 = await fetch('https://www.xiaohongshu.com/api/sns/web/v1/homefeed/recommend_topics', {
+        credentials: 'include',
+        headers: { 'Accept': 'application/json, text/plain, */*', 'Referer': 'https://www.xiaohongshu.com/' }
+      });
+      if (res2.ok) {
+        const data2 = await res2.json();
+        if (data2 && data2.data) return { source: 'recommend_topics', data: data2.data };
+      }
+    } catch(e) {}
+
+    // 备用：搜索热词
+    try {
+      const res3 = await fetch('https://www.xiaohongshu.com/api/sns/web/v1/search/recommend?source=web', {
+        credentials: 'include',
+        headers: { 'Accept': 'application/json', 'Referer': 'https://www.xiaohongshu.com/' }
+      });
+      if (res3.ok) {
+        const data3 = await res3.json();
+        if (data3 && data3.data) return { source: 'search_recommend', data: data3.data };
+      }
+    } catch(e) {}
+
+    return null;
+  });
+
+  if (!result) {
+    console.log(`[热榜] API 未返回数据，尝试从页面直接提取...`);
+
+    // 备用：去搜索热榜页面直接抓页面内容
+    await page.goto('https://www.xiaohongshu.com/explore', {
+      waitUntil: 'domcontentloaded',
+      timeout: 20000,
+    });
+    await page.waitForTimeout(2000);
+
+    // 提取页面中的热门话题文字
+    const topicsFromPage = await page.evaluate(() => {
+      const items = [];
+      // 尝试各种可能的选择器
+      const selectors = [
+        '.hot-search-item',
+        '.trending-item',
+        '[class*="hot"] span',
+        '[class*="trend"] span',
+        '.search-hot-item',
+      ];
+      for (const sel of selectors) {
+        const els = document.querySelectorAll(sel);
+        if (els.length > 3) {
+          els.forEach(el => items.push(el.textContent.trim()));
+          break;
+        }
+      }
+      return items.slice(0, 20);
+    });
+
+    if (topicsFromPage.length > 0) {
+      const trending = {
+        fetchedAt: new Date().toISOString(),
+        source: 'page_scrape',
+        items: topicsFromPage.map((t, i) => ({ rank: i + 1, title: t })),
+      };
+      saveTrending(trending);
+      return;
+    }
+
+    console.log(`[热榜] 页面抓取也未找到数据，跳过`);
+    return;
+  }
+
+  // 解析 API 返回的数据
+  let items = [];
+  const { source, data } = result;
+
+  if (source === 'hot_list' && Array.isArray(data.items || data)) {
+    const rawItems = data.items || data;
+    items = rawItems.slice(0, 20).map((item, i) => ({
+      rank: i + 1,
+      title: item.title || item.keyword || item.name || JSON.stringify(item),
+      heat: item.heat_value || item.view_count || '',
+    }));
+  } else if (source === 'recommend_topics' && Array.isArray(data.topics || data)) {
+    const rawItems = data.topics || data;
+    items = rawItems.slice(0, 20).map((item, i) => ({
+      rank: i + 1,
+      title: item.name || item.title || item.keyword || JSON.stringify(item),
+      heat: '',
+    }));
+  } else if (source === 'search_recommend') {
+    const rawItems = (data.items || data.keywords || data || []);
+    items = (Array.isArray(rawItems) ? rawItems : []).slice(0, 20).map((item, i) => ({
+      rank: i + 1,
+      title: typeof item === 'string' ? item : (item.keyword || item.title || item.name || JSON.stringify(item)),
+      heat: '',
+    }));
+  }
+
+  if (items.length === 0) {
+    console.log(`[热榜] 解析出0条数据，原始：`, JSON.stringify(data).slice(0, 300));
+    return;
+  }
+
+  const trending = {
+    fetchedAt: new Date().toISOString(),
+    source,
+    items,
+  };
+  saveTrending(trending);
+}
+
+function saveTrending(trending) {
+  const savePath = path.join(__dirname, 'trending.json');
+  fs.writeFileSync(savePath, JSON.stringify(trending, null, 2), 'utf8');
+  console.log(`[热榜] ✅ 已保存 ${trending.items.length} 条热榜数据到 trending.json`);
+  console.log(`[热榜] 来源：${trending.source}，时间：${trending.fetchedAt}`);
+  trending.items.slice(0, 5).forEach(item => {
+    console.log(`  ${item.rank}. ${item.title}`);
+  });
 }
 
 main().catch(console.error);
