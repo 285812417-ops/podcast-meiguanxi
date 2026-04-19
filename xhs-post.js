@@ -19,17 +19,17 @@ const COOKIES = [
   { name: 'a1',                                 value: '19cc397bb598teg3k7z7buyd079dg4vkd3go17vrc30000354307',                                                   domain: '.xiaohongshu.com',         path: '/' },
   { name: 'abRequestId',                        value: '1e1e9ac99a8d52532652d69a54cfafc0',                                                                        domain: '.xiaohongshu.com',         path: '/' },
   { name: 'access-token-creator.xiaohongshu.com', value: 'customer.creator.AT-68c517626774797213908992e2vtglmsrsiyw4hp',                                        domain: '.xiaohongshu.com',         path: '/' },
-  { name: 'acw_tc',                             value: '0a0d0d6817765650769732422e475caf3994d10aa5abeb9e8f784ae0c16a91',                                          domain: 'creator.xiaohongshu.com',  path: '/' },
+  { name: 'acw_tc',                             value: '0a0d0ad817765672958066707e18a8b0085e4b61abe3ee14d1a03dda62b5d9',                                          domain: 'creator.xiaohongshu.com',  path: '/' },
   { name: 'customer-sso-sid',                   value: '68c517626774797213908992e2vtglmsrsiyw4hp',                                                                domain: '.xiaohongshu.com',         path: '/' },
   { name: 'customerClientId',                   value: '197999501906426',                                                                                         domain: '.xiaohongshu.com',         path: '/' },
   { name: 'galaxy_creator_session_id',          value: 'DGLtogqHn6Vam7bcx3vIQZ9c1QEBOZzzwsAm',                                                                   domain: '.xiaohongshu.com',         path: '/' },
   { name: 'galaxy.creator.beaker.session.id',  value: '1775746885152096548013',                                                                                   domain: '.xiaohongshu.com',         path: '/' },
   { name: 'gid',                                value: 'yYfDJ0dj2fUWyYfDJ0djy3xlqDYi7DVuySViCTS7kKWFvxq8FWjuxf88848W2jJ8dWifWS8D',                              domain: '.xiaohongshu.com',         path: '/' },
-  { name: 'loadts',                             value: '1776565082380',                                                                                            domain: '.xiaohongshu.com',         path: '/' },
-  { name: 'sec_poison_id',                      value: 'ff3f4a58-361f-408e-856a-12357335dfec',                                                                    domain: '.xiaohongshu.com',         path: '/' },
+  { name: 'loadts',                             value: '1776567296471',                                                                                            domain: '.xiaohongshu.com',         path: '/' },
+  { name: 'sec_poison_id',                      value: 'b805b54f-0049-41b7-af2b-4621053aad23',                                                                    domain: '.xiaohongshu.com',         path: '/' },
   { name: 'web_session',                        value: '030037ae99bad5a913d648729c2e4a7af6d541',                                                                   domain: '.xiaohongshu.com',         path: '/' },
   { name: 'webId',                              value: '8f8168df1f263779d5ba6618431e149e',                                                                         domain: '.xiaohongshu.com',         path: '/' },
-  { name: 'websectiga',                         value: '2845367ec3848418062e761c09db7caf0e8b79d132ccdd1a4f8e64a11d0cac0d',                                         domain: '.xiaohongshu.com',         path: '/' },
+  { name: 'websectiga',                         value: '8886be45f388a1ee7bf611a69f3e174cae48f1ea02c0f8ec3256031b8be9c7ee',                                         domain: '.xiaohongshu.com',         path: '/' },
   { name: 'x-user-id-creator.xiaohongshu.com', value: '5d3c392d0000000011013b14',                                                                                 domain: '.xiaohongshu.com',         path: '/' },
   { name: 'xsecappid',                          value: 'ugc',                                                                                                      domain: '.xiaohongshu.com',         path: '/' },
 ];
@@ -473,11 +473,25 @@ async function main() {
   // 启动浏览器并注入 Cookie
   const browser = await chromium.launch({
     headless: false,
-    args: ['--no-sandbox', '--disable-blink-features=AutomationControlled'],
+    args: [
+      '--no-sandbox',
+      '--disable-blink-features=AutomationControlled',
+      '--disable-infobars',
+      '--disable-dev-shm-usage',
+    ],
   });
   const context = await browser.newContext({
-    userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
     viewport: { width: 1280, height: 900 },
+    locale: 'zh-CN',
+    timezoneId: 'Asia/Shanghai',
+  });
+  // 注入反自动化检测脚本
+  await context.addInitScript(() => {
+    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+    Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+    Object.defineProperty(navigator, 'languages', { get: () => ['zh-CN', 'zh', 'en'] });
+    window.chrome = { runtime: {} };
   });
   // 注入 Cookie（在访问页面前设置）
   await context.addCookies(COOKIES);
