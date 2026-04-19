@@ -514,31 +514,51 @@ async function main() {
 
     // 点击"写长文"标签（top > 0 的真实可见元素）
     console.log(`[浏览器] 切换到写长文...`);
-    const navPromise = page.waitForURL('**/publish/publish**', { timeout: 15000 });
-    const tabClicked = await page.evaluate(() => {
-      const all = Array.from(document.querySelectorAll('*'));
-      for (const el of all) {
-        if (el.children.length === 0 && el.textContent.trim() === '写长文') {
-          const rect = el.getBoundingClientRect();
-          if (rect.top > 0 && rect.width > 0) {
-            el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-            return `clicked: ${el.className} top=${Math.round(rect.top)}`;
+
+    // 尝试多种方式点击"写长文" tab
+    let tabClicked = null;
+    // 方式1： Playwright 原生 click（最可靠）
+    const longTextLoc = page.locator('span.title:has-text("写长文"), [class*=tab]:has-text("写长文"), li:has-text("写长文")').first();
+    if (await longTextLoc.count() > 0) {
+      await longTextLoc.click({ timeout: 5000 }).catch(() => {});
+      tabClicked = 'playwright-click';
+    } else {
+      // 方式2： 搜索包含"写长文"的元素并点击父元素
+      tabClicked = await page.evaluate(() => {
+        const all = Array.from(document.querySelectorAll('*'));
+        for (const el of all) {
+          if (el.children.length === 0 && el.textContent.trim() === '写长文') {
+            const rect = el.getBoundingClientRect();
+            if (rect.top > 0 && rect.width > 0) {
+              // 点它的父元素（tab容器）
+              const parent = el.parentElement || el;
+              parent.click();
+              return `clicked-parent: ${parent.className} top=${Math.round(rect.top)}`;
+            }
           }
         }
-      }
-      return null;
-    });
+        return null;
+      });
+    }
     console.log(`[浏览器] 点击结果：${tabClicked}`);
-    await navPromise.catch(() => {});
-    await page.waitForLoadState('domcontentloaded').catch(() => {});
-    await page.waitForTimeout(2500);
+    await page.waitForTimeout(3000);
     console.log(`[浏览器] 当前 URL：${page.url()}`);
     await page.screenshot({ path: path.join(__dirname, `start-${today}.png`) });
     if (page.url().includes('login')) {
       throw new Error('Cookie 已过期，请重新登录获取新的 Cookie');
     }
-    console.log(`[浏览器] 当前 URL：${page.url()}`);
-    await page.screenshot({ path: path.join(__dirname, `start-${today}.png`) });
+
+    // 打印点击后页面所有元素，确认是否出现"新的创作"或直接出现编辑器
+    const afterTabEls = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('*'))
+        .filter(el => {
+          const t = el.textContent.trim();
+          const r = el.getBoundingClientRect();
+          return t.length > 0 && t.length < 25 && r.top > 80 && r.top < 600 && r.width > 0 && el.children.length === 0;
+        })
+        .map(el => ({ tag: el.tagName, text: el.textContent.trim(), top: Math.round(el.getBoundingClientRect().top), cls: el.className.toString().substring(0, 50) }))
+    ).catch(() => []);
+    console.log('[调试] 点击写长文后元素:', JSON.stringify(afterTabEls));
 
     // 等待"写长文"页面加载
     console.log(`[浏览器] 等待写长文页面加载...`);
