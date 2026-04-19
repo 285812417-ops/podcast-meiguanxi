@@ -601,7 +601,7 @@ async function main() {
     ).catch(() => []);
     console.log('[调试] 可交互元素:', JSON.stringify(pageElements));
 
-    const editorSelectors = [
+    const waitEditorSelectors = [
       '.ql-editor',
       '.ProseMirror',
       '[contenteditable="true"]',
@@ -611,7 +611,7 @@ async function main() {
       '.editor-content',
     ];
     let editorFound = false;
-    for (const sel of editorSelectors) {
+    for (const sel of waitEditorSelectors) {
       const found = await activePage.locator(sel).first().isVisible({ timeout: 3000 }).catch(() => false);
       if (found) {
         console.log(`[浏览器] 编辑器找到: ${sel}`);
