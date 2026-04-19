@@ -531,51 +531,103 @@ async function main() {
     await page.waitForTimeout(2000);
     await page.screenshot({ path: path.join(__dirname, `loading-${today}.png`) });
 
-    // 点击"新的创作"——会在新标签页打开编辑器
+    // 点击"新的创作"——兼容新Tab或当前页跳转两种模式
     console.log(`[浏览器] 点击"新的创作"按钮...`);
-    // Promise.all：同时监听新 tab + 点击，确保不会错过
-    const [newTab] = await Promise.all([
-      page.waitForEvent('popup', { timeout: 15000 })
-        .catch(() => context.waitForEvent('page', { timeout: 5000 }).catch(() => null)),
-      page.locator('button:has-text("新的创作"), a:has-text("新的创作")').first()
-        .click({ timeout: 8000 })
-        .catch(() =>
-          page.evaluate(() => {
-            const all = Array.from(document.querySelectorAll('*'));
-            for (const el of all) {
-              if (el.children.length === 0 && el.textContent.trim() === '新的创作') {
-                const rect = el.getBoundingClientRect();
-                if (rect.top > 0 && rect.width > 0) { el.click(); return; }
-              }
-            }
-          })
-        ),
-    ]);
 
+    // 先尝试点击
+    const clickNewCreate = async () => {
+      const loc = page.locator('button:has-text("新的创作"), a:has-text("新的创作")').first();
+      const count = await loc.count();
+      if (count > 0) {
+        await loc.click({ timeout: 8000 }).catch(() => {});
+        return;
+      }
+      // 备用：JS点击
+      await page.evaluate(() => {
+        const all = Array.from(document.querySelectorAll('*'));
+        for (const el of all) {
+          if (el.children.length === 0 && el.textContent.trim() === '新的创作') {
+            const rect = el.getBoundingClientRect();
+            if (rect.top > 0 && rect.width > 0) { el.click(); return; }
+          }
+        }
+      });
+    };
+
+    // 同时监听 popup（新Tab）和当前页URL变化
     let activePage;
+    const popupPromise = context.waitForEvent('page', { timeout: 8000 }).catch(() => null);
+    await clickNewCreate();
+    await page.waitForTimeout(2000);
+
+    const newTab = await popupPromise;
+    const allPages = context.pages();
+    console.log(`[浏览器] context 当前 pages 数量：${allPages.length}`);
+
     if (newTab) {
       console.log(`[浏览器] 新标签页已捕获`);
-      await newTab.waitForLoadState('domcontentloaded');
+      await newTab.waitForLoadState('domcontentloaded').catch(() => {});
       await newTab.waitForTimeout(3000);
       console.log(`[浏览器] 新标签页 URL：${newTab.url()}`);
       activePage = newTab;
-    } else {
-      // 没捕获到 popup，检查 context 里是否已有新页面
-      const pages = context.pages();
-      console.log(`[浏览器] context 当前 pages 数量：${pages.length}`);
-      activePage = pages.length > 1 ? pages[pages.length - 1] : page;
+    } else if (allPages.length > 1) {
+      activePage = allPages[allPages.length - 1];
       await activePage.waitForLoadState('domcontentloaded').catch(() => {});
       await activePage.waitForTimeout(3000);
-      console.log(`[浏览器] 使用页面 URL：${activePage.url()}`);
+      console.log(`[浏览器] 使用最新页 URL：${activePage.url()}`);
+    } else {
+      // 没有新Tab，等当前页面跳转到编辑器
+      console.log(`[浏览器] 无新Tab，等待当前页面跳转到编辑器...`);
+      await page.waitForURL('**/creator/**', { timeout: 10000 }).catch(() => {});
+      await page.waitForTimeout(3000);
+      console.log(`[浏览器] 当前页 URL：${page.url()}`);
+      activePage = page;
     }
 
     // 等待编辑器加载
     console.log(`[浏览器] 等待编辑器加载...`);
-    await activePage.waitForSelector('.ql-editor, [contenteditable="true"], .ProseMirror, textarea', {
-      state: 'visible',
-      timeout: 25000,
-    });
-    console.log(`[浏览器] 编辑器加载完成`);
+    // 等待编辑器——先截图方便调试，然后尝试多个选择器
+    await activePage.screenshot({ path: path.join(__dirname, `before-editor-${today}.png`) }).catch(() => {});
+    console.log(`[浏览器] 当前页面 URL: ${activePage.url()}`);
+
+    // 打印页面所有可交互元素帮助调试
+    const pageElements = await activePage.evaluate(() =>
+      Array.from(document.querySelectorAll('[contenteditable], .ql-editor, .ProseMirror, textarea, input')).map(el => ({
+        tag: el.tagName, cls: el.className.substring(0, 60),
+        contenteditable: el.getAttribute('contenteditable'),
+        placeholder: el.getAttribute('placeholder') || '',
+        visible: el.getBoundingClientRect().width > 0
+      }))
+    ).catch(() => []);
+    console.log('[调试] 可交互元素:', JSON.stringify(pageElements));
+
+    const editorSelectors = [
+      '.ql-editor',
+      '.ProseMirror',
+      '[contenteditable="true"]',
+      'textarea',
+      '[data-placeholder]',
+      '.note-editor',
+      '.editor-content',
+    ];
+    let editorFound = false;
+    for (const sel of editorSelectors) {
+      const found = await activePage.locator(sel).first().isVisible({ timeout: 3000 }).catch(() => false);
+      if (found) {
+        console.log(`[浏览器] 编辑器找到: ${sel}`);
+        editorFound = true;
+        break;
+      }
+    }
+    if (!editorFound) {
+      await activePage.waitForTimeout(5000);
+      await activePage.screenshot({ path: path.join(__dirname, `editor-wait-${today}.png`) }).catch(() => {});
+      await activePage.waitForSelector('.ql-editor, [contenteditable="true"], .ProseMirror, textarea, [data-placeholder]', {
+        state: 'visible',
+        timeout: 30000,
+      });
+    }
+    console.log('[浏览器] 编辑器加载完成');
     await activePage.waitForTimeout(1000);
 
     // 填写标题（长文有独立标题栏）
