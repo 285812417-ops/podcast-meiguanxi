@@ -1,6 +1,6 @@
 const { chromium } = require('playwright');
+const path = require('path');
 
-// 直接硬编码 cookies，避免正则解析问题
 const COOKIES = [
   { name: 'a1', value: '19cc397bb598teg3k7z7buyd079dg4vkd3go17vrc30000354307', domain: '.xiaohongshu.com', path: '/' },
   { name: 'access-token-creator.xiaohongshu.com', value: 'customer.creator.AT-68c517626774797213908992e2vtglmsrsiyw4hp', domain: '.xiaohongshu.com', path: '/' },
@@ -20,36 +20,48 @@ const COOKIES = [
   const ctx = await browser.newContext();
   await ctx.addCookies(COOKIES);
   const page = await ctx.newPage();
-  
-  console.log('打开发布页...');
+
+  // 监听新 Tab
+  ctx.on('page', p => console.log('🆕 新页面打开:', p.url()));
+
   await page.goto('https://creator.xiaohongshu.com/publish/publish');
-  await page.waitForTimeout(4000);
-  await page.screenshot({ path: 'debug-step1.png' });
-  console.log('截图1已保存: debug-step1.png');
-  
-  // 打印所有可见文字元素
-  const allText = await page.evaluate(() =>
-    Array.from(document.querySelectorAll('button, a, [role=tab], span, div'))
+  await page.waitForTimeout(3000);
+
+  // 点击"写长文" tab
+  console.log('\n步骤1: 点击「写长文」...');
+  await page.evaluate(() => {
+    const all = Array.from(document.querySelectorAll('span.title'));
+    for (const el of all) {
+      if (el.textContent.trim() === '写长文') {
+        const rect = el.getBoundingClientRect();
+        if (rect.top > 0) { el.click(); console.log('clicked'); return; }
+      }
+    }
+  });
+  await page.waitForTimeout(3000);
+  await page.screenshot({ path: 'debug-after-longarticle.png' });
+  console.log('截图已保存: debug-after-longarticle.png');
+  console.log('当前URL:', page.url());
+
+  // 打印点击后的页面元素
+  const els = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('button, a, span, div'))
       .filter(el => {
         const t = el.textContent.trim();
         const rect = el.getBoundingClientRect();
-        return t.length > 0 && t.length < 20 && rect.width > 0 && rect.height > 0 && el.children.length === 0;
+        return t.length > 0 && t.length < 25 && rect.width > 0 && rect.height > 0 && el.children.length === 0;
       })
       .map(el => ({
-        tag: el.tagName,
-        text: el.textContent.trim(),
+        tag: el.tag, text: el.textContent.trim(),
         class: el.className.toString().substring(0, 50),
         top: Math.round(el.getBoundingClientRect().top)
       }))
-      .slice(0, 60)
+      .filter(x => x.top > 70 && x.top < 400)
+      .slice(0, 40)
   );
-  console.log('页面上的文字元素:');
-  allText.forEach(x => console.log(`  [${x.tag}] top=${x.top} "${x.text}" class=${x.class}`));
-  
-  // 尝试点击"写长文"
-  console.log('\n尝试找"写长文"...');
-  const longText = allText.filter(x => x.text.includes('长文') || x.text.includes('文章'));
-  console.log('长文相关:', JSON.stringify(longText));
-  
+  console.log('\n点击「写长文」后页面中部元素:');
+  els.forEach(x => console.log(`  top=${x.top} "${x.text}" class=${x.class}`));
+
+  await page.waitForTimeout(2000);
   await browser.close();
 })();
